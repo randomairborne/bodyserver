@@ -1,0 +1,13 @@
+[package]
+name = "bodyserver"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+cyclingbody = { path = "cyclingbody" }
+pico-args = "0.5.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[workspace]
+members = ["cyclingbody"]
