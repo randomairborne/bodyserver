@@ -13,7 +13,6 @@ pub struct CyclingBodySource {
     bodies: Arc<[Bytes]>,
     wait: Duration,
     loop_limit: Option<NonZero<usize>>,
-    bodies_size_sum: usize,
 }
 
 impl CyclingBodySource {
@@ -24,7 +23,6 @@ impl CyclingBodySource {
     ) -> Result<Self, InvalidItemLength> {
         if !bodies.is_empty() {
             Ok(Self {
-                bodies_size_sum: bodies.iter().map(Bytes::len).sum(),
                 bodies,
                 wait,
                 loop_limit,
@@ -48,11 +46,15 @@ impl CyclingBodySource {
 
 #[derive(Debug)]
 pub struct CyclingBody {
+    /// Ordered list of frame bytes
     bodies: Arc<[Bytes]>,
-    bodies_size_sum: usize,
+    /// What index we are next going to send within the body
     current: usize,
+    /// Number of loops after which we will stop sending body frames
     loop_limit: Option<NonZero<usize>>,
+    /// Number of loops we have fully completed
     loop_count: usize,
+    /// Tokio interval timer for polling on
     interval: Interval,
 }
 
@@ -60,7 +62,6 @@ impl From<CyclingBodySource> for CyclingBody {
     fn from(src: CyclingBodySource) -> Self {
         Self {
             bodies: src.bodies,
-            bodies_size_sum: src.bodies_size_sum,
             current: 0,
             loop_limit: src.loop_limit,
             loop_count: 0,
@@ -113,7 +114,13 @@ impl http_body::Body for CyclingBody {
 
     fn size_hint(&self) -> SizeHint {
         if let Some(loop_limit) = self.loop_limit {
-            let total_size = self.bodies_size_sum * loop_limit.get();
+            let bodies_size_sum: usize = self.bodies.iter().map(Bytes::len).sum();
+
+            let current_iter_size_sum: usize =
+                self.bodies[self.current..].iter().map(Bytes::len).sum();
+
+            let total_size: usize =
+                (bodies_size_sum * (loop_limit.get() - self.loop_count)) + current_iter_size_sum;
             // returns a known, exact value only if a usize fits into a u64- otherwise
             // returns the default
             // this code will likely never trigger the sad path
