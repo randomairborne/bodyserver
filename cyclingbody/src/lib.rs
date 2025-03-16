@@ -1,4 +1,4 @@
-use std::{convert::Infallible, sync::Arc, task::Poll, time::Duration};
+use std::{convert::Infallible, num::NonZero, sync::Arc, task::Poll, time::Duration};
 
 use bytes::Bytes;
 use futures_core::Stream;
@@ -8,18 +8,35 @@ use tokio::time::{Instant, Interval};
 pub struct CyclingBodySource {
     bodies: Arc<[Bytes]>,
     wait: Duration,
+    loop_limit: Option<NonZero<usize>>,
 }
 
 impl CyclingBodySource {
-    pub fn new(bodies: Arc<[Bytes]>, wait: Duration) -> Result<Self, InvalidItemLength> {
+    pub fn new(
+        bodies: Arc<[Bytes]>,
+        wait: Duration,
+        loop_limit: Option<NonZero<usize>>,
+    ) -> Result<Self, InvalidItemLength> {
         if !bodies.is_empty() {
-            Ok(Self { bodies, wait })
+            Ok(Self {
+                bodies,
+                wait,
+                loop_limit,
+            })
         } else {
             Err(InvalidItemLength)
         }
     }
-    pub fn from_vecs(bodies: Vec<Vec<u8>>, wait: Duration) -> Result<Self, InvalidItemLength> {
-        Self::new(bodies.into_iter().map(Bytes::from_owner).collect(), wait)
+    pub fn from_vecs(
+        bodies: Vec<Vec<u8>>,
+        wait: Duration,
+        loop_limit: Option<NonZero<usize>>,
+    ) -> Result<Self, InvalidItemLength> {
+        Self::new(
+            bodies.into_iter().map(Bytes::from_owner).collect(),
+            wait,
+            loop_limit,
+        )
     }
 }
 
@@ -27,6 +44,8 @@ impl CyclingBodySource {
 pub struct CyclingBody {
     bodies: Arc<[Bytes]>,
     current: usize,
+    loop_limit: Option<NonZero<usize>>,
+    loop_count: usize,
     interval: Interval,
 }
 
@@ -35,6 +54,8 @@ impl From<CyclingBodySource> for CyclingBody {
         Self {
             bodies: src.bodies,
             current: 0,
+            loop_limit: src.loop_limit,
+            loop_count: 0,
             interval: tokio::time::interval_at(Instant::now(), src.wait),
         }
     }
@@ -45,7 +66,7 @@ pub struct InvalidItemLength;
 
 impl std::fmt::Display for InvalidItemLength {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "You must pass in a vec of at least one element")
+        write!(f, "At least one frame required")
     }
 }
 
@@ -61,13 +82,18 @@ impl Stream for CyclingBody {
         match self.interval.poll_tick(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(_) => {
-                let minibody = self.bodies[self.current].clone();
-                self.current = if self.current == self.bodies.len() - 1 {
-                    0
+                if self.loop_limit.is_some_and(|v| self.loop_count >= v.get()) {
+                    Poll::Ready(None)
                 } else {
-                    self.current + 1
-                };
-                Poll::Ready(Some(Ok(minibody)))
+                    let minibody = self.bodies[self.current].clone();
+                    self.current = if self.current == self.bodies.len() - 1 {
+                        self.loop_count += 1;
+                        0
+                    } else {
+                        self.current + 1
+                    };
+                    Poll::Ready(Some(Ok(minibody)))
+                }
             }
         }
     }

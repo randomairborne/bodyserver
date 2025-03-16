@@ -1,4 +1,4 @@
-use std::{convert::Infallible, ffi::OsString, net::Ipv4Addr, time::Duration};
+use std::{convert::Infallible, ffi::OsString, net::Ipv4Addr, num::NonZero, time::Duration};
 
 use cyclingbody::{CyclingBody, CyclingBodySource};
 use hyper::{Response, server::conn::http1, service::service_fn};
@@ -10,13 +10,24 @@ use tokio::net::TcpListener;
 struct Args {
     #[argh(positional, description = "folder to read frames out of")]
     folder: String,
-    #[argh(option, short = 'f', default = "24.0", description = "your desired framerate, in frames per second")]
+    #[argh(
+        option,
+        short = 'f',
+        default = "24.0",
+        description = "your desired framerate, in frames per second"
+    )]
     framerate: f64,
+    #[argh(
+        option,
+        short = 'l',
+        description = "how many times the video should loop"
+    )]
+    loops: Option<NonZero<usize>>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let args: Args =  argh::from_env();
+    let args: Args = argh::from_env();
 
     let mut frames: Vec<(OsString, Vec<u8>)> = Vec::new();
 
@@ -33,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         };
 
         if file.file_type()?.is_file() {
-            let mut data = match std::fs::read(file.path()) {
+            let data = match std::fs::read(file.path()) {
                 Ok(v) => v,
                 Err(e) => {
                     let fname = file.file_name();
@@ -55,7 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     frames.sort_by(|a, b| a.0.cmp(&b.0));
     let frames = frames.into_iter().map(|v| v.1).collect();
 
-    let bodies = CyclingBodySource::from_vecs(frames, Duration::from_secs_f64(1. / args.framerate))?;
+    let bodies = CyclingBodySource::from_vecs(
+        frames,
+        Duration::from_secs_f64(1. / args.framerate),
+        args.loops,
+    )?;
 
     let tcp = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 8080)).await?;
     serve(tcp, bodies).await?;
