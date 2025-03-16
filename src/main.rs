@@ -106,7 +106,10 @@ async fn serve(
                 )
                 .await
             {
-                eprintln!("Error serving connection: {:?}", err);
+                // these happen in the incredibly rare circumstance of "the user hitting ctrl-c"
+                if !(err.is_body_write_aborted() || err.is_incomplete_message()) {
+                    eprintln!("Error serving connection: {:?}", err);
+                }
             }
         });
     }
