@@ -4,10 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.8"
 cyclingbody = { path = "cyclingbody" }
-pico-args = "0.5.0"
+
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+hyper-util = { version = "0.1", features = ["full"] }
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+argh = { version = "0.1.13", default-features = false, features = ["help"] }
 
 [workspace]
 members = ["cyclingbody"]
