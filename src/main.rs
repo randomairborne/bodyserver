@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
 
             // Always add a \n and a clear to the file
-            data.extend(b"\n\x1b[2J");
+            data.extend(b"\n\x1b[2J\x1b[H");
             frames.push((file.file_name(), data));
         }
     }
