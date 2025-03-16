@@ -4,6 +4,9 @@ use bytes::Bytes;
 use futures_core::Stream;
 use tokio::time::{Instant, Interval};
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone)]
 pub struct CyclingBodySource {
     bodies: Arc<[Bytes]>,
