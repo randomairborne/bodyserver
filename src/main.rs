@@ -43,8 +43,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             };
 
             // Always add a \n and a clear to the file
-            data.extend(b"\n\x1b[2J\x1b[H");
-            frames.push((file.file_name(), data));
+            let frame = {
+                let mut frame = b"\n\x1b[2J\x1b[H".to_vec();
+                frame.extend_from_slice(&data);
+                frame
+            };
+            frames.push((file.file_name(), frame));
         }
     }
 
