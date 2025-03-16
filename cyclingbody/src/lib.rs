@@ -2,6 +2,7 @@ use std::{convert::Infallible, num::NonZero, sync::Arc, task::Poll, time::Durati
 
 use bytes::Bytes;
 use futures_core::Stream;
+use http_body::SizeHint;
 use tokio::time::{Instant, Interval};
 
 #[cfg(test)]
@@ -12,6 +13,7 @@ pub struct CyclingBodySource {
     bodies: Arc<[Bytes]>,
     wait: Duration,
     loop_limit: Option<NonZero<usize>>,
+    bodies_size_sum: usize,
 }
 
 impl CyclingBodySource {
@@ -22,6 +24,7 @@ impl CyclingBodySource {
     ) -> Result<Self, InvalidItemLength> {
         if !bodies.is_empty() {
             Ok(Self {
+                bodies_size_sum: bodies.iter().map(Bytes::len).sum(),
                 bodies,
                 wait,
                 loop_limit,
@@ -46,6 +49,7 @@ impl CyclingBodySource {
 #[derive(Debug)]
 pub struct CyclingBody {
     bodies: Arc<[Bytes]>,
+    bodies_size_sum: usize,
     current: usize,
     loop_limit: Option<NonZero<usize>>,
     loop_count: usize,
@@ -56,6 +60,7 @@ impl From<CyclingBodySource> for CyclingBody {
     fn from(src: CyclingBodySource) -> Self {
         Self {
             bodies: src.bodies,
+            bodies_size_sum: src.bodies_size_sum,
             current: 0,
             loop_limit: src.loop_limit,
             loop_count: 0,
@@ -105,6 +110,23 @@ impl Stream for CyclingBody {
 impl http_body::Body for CyclingBody {
     type Data = Bytes;
     type Error = std::convert::Infallible;
+
+    fn size_hint(&self) -> SizeHint {
+        if let Some(loop_limit) = self.loop_limit {
+            let total_size = self.bodies_size_sum * loop_limit.get();
+            // returns a known, exact value only if a usize fits into a u64- otherwise
+            // returns the default
+            // this code will likely never trigger the sad path
+            // it gets optimized to like 4 mov
+            total_size
+                .try_into()
+                .ok()
+                .map(SizeHint::with_exact)
+                .unwrap_or_else(SizeHint::new)
+        } else {
+            SizeHint::new()
+        }
+    }
 
     fn is_end_stream(&self) -> bool {
         false
